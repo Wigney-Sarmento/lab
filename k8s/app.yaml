@@ -24,7 +24,7 @@ spec:
               containerPort: 8080
           env:
             - name: DB_HOST
-              value: mariadb
+              value: host.minikube.internal
             - name: DB_PORT
               value: "3306"
             - name: DB_NAME
