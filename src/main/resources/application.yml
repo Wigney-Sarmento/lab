@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: transaction-lab
+  datasource:
+    url: jdbc:mariadb://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:transaction_lab}
+    username: ${DB_USER:transaction_app}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: update # Somente laboratorio; em producao use migracoes Flyway/Liquibase.
+    open-in-view: false
+  jackson:
+    time-zone: UTC
+
+server:
+  port: 8080
+
+lab:
+  generator:
+    enabled: ${GENERATOR_ENABLED:true}
+    interval-ms: ${GENERATOR_INTERVAL_MS:5000}
+
+logging:
+  structured:
+    format:
+      console: logstash
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true

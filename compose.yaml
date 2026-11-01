@@ -1,0 +1,39 @@
+services:
+#  mariadb:
+#    image: mariadb:11.4
+#    restart: unless-stopped
+#    environment:
+#      MARIADB_DATABASE: transaction_lab
+#      MARIADB_USER: ${DB_USER:?Configure DB_USER no .env}
+#      MARIADB_PASSWORD: ${DB_PASSWORD:?Configure DB_PASSWORD no .env}
+#      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Configure DB_ROOT_PASSWORD no .env}
+#    ports:
+#      - "127.0.0.1:3307:3306"
+#    volumes:
+#      - mariadb_data:/var/lib/mysql
+#    healthcheck:
+#      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+#      interval: 5s
+#      timeout: 5s
+#      retries: 20
+#      start_period: 40s
+
+  api:
+    build: .
+    restart: unless-stopped
+    network_mode: host
+#    depends_on:
+#      mariadb:
+#        condition: service_healthy
+    environment:
+      DB_HOST: 127.0.0.1 
+      DB_PORT: 3306
+      DB_NAME: transaction_lab
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      GENERATOR_ENABLED: "true"
+      GENERATOR_INTERVAL_MS: ${GENERATOR_INTERVAL_MS}
+      SERVER_PORT: "8085"
+
+#volumes:
+#  mariadb_data:

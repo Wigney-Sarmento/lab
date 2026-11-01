@@ -1,0 +1,7 @@
+.env
+target/
+*.log
+.idea/
+.vscode/
+rendered-app.yaml
+.maven/proxy-settings.xml
