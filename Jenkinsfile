@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -14,12 +15,31 @@ pipeline {
             }
         }
 
-        stage('Build + testes') {
+        stage('Testes') {
             steps {
-                // Compila a aplicação Java e executa os testes via Docker.
+                echo 'Executando testes da aplicação Java...'
+
                 sh '''
                     set -eu
-                    docker build --pull -t transaction-lab:ci .
+
+                    docker run --rm \
+                        -v "$PWD:/app" \
+                        -w /app \
+                        maven:3.9-eclipse-temurin-21 \
+                        mvn -B -ntp clean verify
+                '''
+            }
+        }
+
+        stage('Build Docker') {
+            steps {
+                echo 'Construindo imagem Docker...'
+
+                sh '''
+                    set -eu
+
+                    docker build --pull \
+                        -t transaction-lab:ci .
                 '''
             }
         }
