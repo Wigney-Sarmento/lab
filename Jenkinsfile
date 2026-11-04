@@ -8,19 +8,24 @@ pipeline {
         skipDefaultCheckout(true)
     }
 
+    environment {
+        IMAGE_NAME = 'transaction-lab'
+        K8S_NAMESPACE = 'transaction-lab'
+        K8S_DEPLOYMENT = 'transaction-api'
+    }
+
     stages {
 
         stage('Checkout') {
             steps {
                 echo 'Baixando codigo do GitHub...'
-
                 checkout scm
             }
         }
 
         stage('Testes') {
             steps {
-                echo 'Executando testes da aplicacao Java...'
+                echo 'Executando testes Java com Maven...'
 
                 sh '''
                     set -eu
@@ -42,16 +47,12 @@ pipeline {
                     set -eu
 
                     docker build --pull \
-                        -t transaction-lab:ci .
+                        -t "$IMAGE_NAME:ci" .
                 '''
             }
         }
 
         stage('Publicar no Docker Hub') {
-            when {
-                branch 'main'
-            }
-
             steps {
                 echo 'Publicando imagem no Docker Hub...'
 
@@ -63,7 +64,7 @@ pipeline {
                     )
                 ]) {
                     script {
-                        env.DEPLOY_IMAGE = "docker.io/${env.DOCKERHUB_USER}/transaction-lab:${env.BUILD_NUMBER}"
+                        env.DEPLOY_IMAGE = "docker.io/${env.DOCKERHUB_USER}/${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
                     }
 
                     sh '''
@@ -74,7 +75,9 @@ pipeline {
                             --username "$DOCKERHUB_USER" \
                             --password-stdin
 
-                        docker tag transaction-lab:ci "$DEPLOY_IMAGE"
+                        docker tag \
+                            "$IMAGE_NAME:ci" \
+                            "$DEPLOY_IMAGE"
 
                         docker push "$DEPLOY_IMAGE"
 
@@ -85,56 +88,68 @@ pipeline {
         }
 
         stage('Deploy no Kubernetes') {
-            when {
-                branch 'main'
-            }
-
             steps {
                 echo 'Iniciando deploy no Minikube...'
 
                 script {
-                    def modelo = readFile('k8s/app.yaml')
+                    def manifesto = readFile('k8s/app.yaml')
 
-                    if (!modelo.contains('__IMAGE__')) {
-                        error('Marcador __IMAGE__ nao encontrado no manifesto Kubernetes')
+                    if (!manifesto.contains('__IMAGE__')) {
+                        error('Marcador __IMAGE__ nao encontrado em k8s/app.yaml')
                     }
+
+                    if (!env.DEPLOY_IMAGE?.trim()) {
+                        error('DEPLOY_IMAGE nao foi definida')
+                    }
+
+                    def manifestoFinal = manifesto.replace(
+                        '__IMAGE__',
+                        env.DEPLOY_IMAGE
+                    )
 
                     writeFile(
                         file: 'rendered-app.yaml',
-                        text: modelo.replace(
-                            '__IMAGE__',
-                            env.DEPLOY_IMAGE
-                        )
+                        text: manifestoFinal
                     )
                 }
 
                 sh '''
                     set -eu
 
-                    echo "Verificando conexao com Kubernetes..."
+                    echo "Verificando cluster Kubernetes..."
                     kubectl cluster-info
 
-                    echo "Contexto atual:"
+                    echo "Contexto Kubernetes:"
                     kubectl config current-context
 
-                    echo "Aplicando manifesto Kubernetes..."
-                    kubectl -n transaction-lab apply \
-                        -f rendered-app.yaml
+                    echo "Verificando namespace..."
+                    kubectl get namespace "$K8S_NAMESPACE"
+
+                    echo "Aplicando manifesto..."
+                    kubectl -n "$K8S_NAMESPACE" \
+                        apply -f rendered-app.yaml
 
                     echo "Aguardando rollout..."
-                    kubectl -n transaction-lab rollout status \
-                        deployment/transaction-api \
+                    kubectl -n "$K8S_NAMESPACE" \
+                        rollout status \
+                        "deployment/$K8S_DEPLOYMENT" \
                         --timeout=180s
 
+                    echo "Verificando Deployment..."
+                    kubectl -n "$K8S_NAMESPACE" \
+                        get deployment "$K8S_DEPLOYMENT"
+
                     echo "Verificando Pods..."
-                    kubectl -n transaction-lab get pods -o wide
+                    kubectl -n "$K8S_NAMESPACE" \
+                        get pods -o wide
 
                     echo "Verificando Services..."
-                    kubectl -n transaction-lab get svc
+                    kubectl -n "$K8S_NAMESPACE" \
+                        get svc
 
                     echo "Imagem implantada:"
-                    kubectl -n transaction-lab get deployment \
-                        transaction-api \
+                    kubectl -n "$K8S_NAMESPACE" \
+                        get deployment "$K8S_DEPLOYMENT" \
                         -o jsonpath='{.spec.template.spec.containers[0].image}'
 
                     echo
@@ -145,19 +160,19 @@ pipeline {
 
     post {
         success {
-            echo '========================================'
+            echo '=========================================='
             echo 'PIPELINE EXECUTADA COM SUCESSO!'
+            echo 'Testes aprovados.'
             echo 'Imagem publicada no Docker Hub.'
-            echo 'Aplicacao atualizada no Kubernetes.'
-            echo 'OpenTelemetry configurado para SigNoz.'
-            echo '========================================'
+            echo 'Deploy realizado no Kubernetes.'
+            echo '=========================================='
         }
 
         failure {
-            echo '========================================'
+            echo '=========================================='
             echo 'FALHA NA PIPELINE!'
-            echo 'Verifique o Console Output.'
-            echo '========================================'
+            echo 'Consulte o Console Output.'
+            echo '=========================================='
         }
 
         always {
