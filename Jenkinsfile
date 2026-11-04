@@ -5,6 +5,9 @@ pipeline {
     options {
         timestamps()
         disableConcurrentBuilds()
+        skipDefaultCheckout(true)
+    }
+
     }
 
     stages {
@@ -45,6 +48,7 @@ pipeline {
         }
 
         stage('Publicar no Docker Hub') {
+            when { branch 'main' }
             steps {
                 withCredentials([
                     usernamePassword(
@@ -75,6 +79,7 @@ pipeline {
         }
 
         stage('Deploy no Kubernetes') {
+            when { branch 'main' }
             steps {
                 script {
                     def modelo = readFile('k8s/app.yaml')
@@ -95,6 +100,9 @@ pipeline {
                     echo "Verificando conexão com Kubernetes..."
                     kubectl cluster-info
 
+                    echo "Contexto atual:"
+                    kubectl config current-context
+
                     echo "Aplicando manifesto..."
                     kubectl -n transaction-lab apply -f rendered-app.yaml
 
@@ -107,6 +115,11 @@ pipeline {
 
                     echo "Listando Services..."
                     kubectl -n transaction-lab get svc
+
+                    echo "Imagem implantada:"
+                    kubectl -n transaction-lab get deployment transaction-api \
+                        -o jsonpath='{.spec.template.spec.containers[0].image}'
+                    echo
                 '''
             }
         }
@@ -120,6 +133,10 @@ pipeline {
 
         failure {
             echo 'Pipeline falhou. Verifique o Console Output.'
+            sh '''
+                kubectl -n transaction-lab get pods -o wide || true
+                kubectl -n transaction-lab describe deployment transaction-api || true
+            '''
         }
 
         always {

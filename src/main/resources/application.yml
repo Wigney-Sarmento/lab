@@ -1,14 +1,6 @@
 spring:
   application:
     name: transaction-lab
-  datasource:
-    url: jdbc:mariadb://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:transaction_lab}
-    username: ${DB_USER:transaction_app}
-    password: ${DB_PASSWORD:}
-  jpa:
-    hibernate:
-      ddl-auto: update # Somente laboratorio; em producao use migracoes Flyway/Liquibase.
-    open-in-view: false
   jackson:
     time-zone: UTC
 
@@ -36,7 +28,7 @@ management:
         enabled: true
       group:
         readiness:
-          include: readinessState,db
+          include: readinessState
   health:
     livenessstate:
       enabled: true

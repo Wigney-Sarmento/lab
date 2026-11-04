@@ -3,28 +3,27 @@ package br.com.lab.transactions;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.spi.LoggingEventBuilder;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class TransacaoService {
     private static final Logger LOG = LoggerFactory.getLogger(TransacaoService.class);
-
-    private final TransacaoRepository repository;
+    private static final int MAX_HISTORICO = 1000;
+    private final ArrayDeque<Transacao> historico = new ArrayDeque<>();
     private final MeterRegistry meterRegistry;
+    private long total, aprovadas, negadas, erros;
 
-    public TransacaoService(TransacaoRepository repository, MeterRegistry meterRegistry) {
-        this.repository = repository;
+    public TransacaoService(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
     }
 
@@ -36,20 +35,21 @@ public class TransacaoService {
             case NEGADA -> "05";
             case ERRO -> "96";
         };
-
-        Transacao transacao = new Transacao(UUID.randomUUID().toString(), request.valor(),
+        Transacao salva = new Transacao(UUID.randomUUID().toString(), request.valor(),
                 request.estabelecimento(), status, codigo, origem, Instant.now());
-
-        // O resultado ERRO e simulado e tambem e armazenado para analise no banco.
-        Transacao salva = repository.save(transacao);
+        synchronized (historico) {
+            historico.addFirst(salva);
+            if (historico.size() > MAX_HISTORICO) historico.removeLast();
+            total++;
+            switch (status) {
+                case APROVADA -> aprovadas++;
+                case NEGADA -> negadas++;
+                case ERRO -> erros++;
+            }
+        }
         long duracaoMs = (System.nanoTime() - inicio) / 1_000_000;
-
-        Counter.builder("lab.transacoes")
-                .description("Transacoes gravadas no banco, por status")
-                .tag("status", status.name())
-                .register(meterRegistry)
-                .increment();
-
+        Counter.builder("lab.transacoes").description("Transacoes simuladas, por status")
+                .tag("status", status.name()).register(meterRegistry).increment();
         LoggingEventBuilder evento = switch (status) {
             case APROVADA -> LOG.atInfo();
             case NEGADA -> LOG.atWarn();
@@ -62,27 +62,27 @@ public class TransacaoService {
                 .addKeyValue("estabelecimento", salva.getEstabelecimento())
                 .addKeyValue("origem", origem)
                 .addKeyValue("codigo_resposta", codigo)
-                .addKeyValue("duracao_ms", duracaoMs)
-                .log("transacao_processada");
+                .addKeyValue("duracao_ms", duracaoMs).log("transacao_processada");
         return salva;
     }
 
-    @Transactional(readOnly = true)
     public List<Transacao> listar(int limite) {
-        return repository.findAll(PageRequest.of(0, Math.max(1, Math.min(limite, 100)),
-                Sort.by(Sort.Direction.DESC, "criadaEm"))).getContent();
+        synchronized (historico) {
+            return new ArrayList<>(historico).stream().limit(Math.max(1, Math.min(limite, 100))).toList();
+        }
     }
 
-    @Transactional(readOnly = true)
     public Transacao buscar(String id) {
-        return repository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transacao nao encontrada"));
+        synchronized (historico) {
+            return historico.stream().filter(t -> t.getId().equals(id)).findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transacao nao encontrada"));
+        }
     }
 
-    @Transactional(readOnly = true)
     public ResumoTransacoes resumo() {
-        return new ResumoTransacoes(repository.count(), repository.countByStatus(StatusTransacao.APROVADA),
-                repository.countByStatus(StatusTransacao.NEGADA), repository.countByStatus(StatusTransacao.ERRO));
+        synchronized (historico) {
+            return new ResumoTransacoes(total, aprovadas, negadas, erros);
+        }
     }
 
     private StatusTransacao sortearStatus() {

@@ -23,23 +23,24 @@ spec:
             - name: http
               containerPort: 8080
           env:
-            - name: DB_HOST
-              value: host.minikube.internal
-            - name: DB_PORT
-              value: "3306"
-            - name: DB_NAME
-              value: transaction_lab
-            - name: DB_USER
-              value: transaction_app
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: transaction-db
-                  key: password
             - name: GENERATOR_ENABLED
               value: "true"
             - name: GENERATOR_INTERVAL_MS
               value: "5000"
+            - name: OTEL_SERVICE_NAME
+              value: transaction-lab
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://192.168.1.143:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_METRICS_EXPORTER
+              value: otlp
+            - name: OTEL_LOGS_EXPORTER
+              value: none
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment=lab
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
@@ -61,10 +62,10 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 384Mi
             limits:
               cpu: "1"
-              memory: 512Mi
+              memory: 768Mi
           securityContext:
             runAsNonRoot: true
             runAsUser: 10001
